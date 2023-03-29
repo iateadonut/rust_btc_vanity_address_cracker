@@ -4,7 +4,7 @@ use bitcoin::network::constants::Network;
 use bitcoin::util::key::PrivateKey;
 use bitcoin::Address;
 
-fn main() {
+fn create_keypair() -> (PrivateKey, Address) {
     // Generate a random secret key
     let secp = secp256k1::Secp256k1::new();
     let mut rng = OsRng;
@@ -26,6 +26,12 @@ fn main() {
         key: secret_key,
     };
     let address = Address::p2pkh(&public_key, Network::Bitcoin);
+
+    (private_key, address)
+}
+
+fn main() {
+    let (private_key, address) = create_keypair();
 
     // Print the generated key pair
     println!("Private key: {}", private_key.to_wif());
