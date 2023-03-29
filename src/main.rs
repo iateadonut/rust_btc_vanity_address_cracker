@@ -47,6 +47,7 @@ fn read_target_substrings(file_path: &str) -> Result<Vec<String>, io::Error> {
 fn main() {
     let max_threads = 2;
     let output_file = "keypairs.txt";
+    let echo_interval: u64 = 100000;
 
     // let target_substrings = ["brodude", "SwEeT", "BU"];
 
@@ -70,6 +71,8 @@ fn main() {
         let finished_threads = finished_threads.clone();
 
         thread::spawn(move || {
+            let mut attempts: u64 = 0;
+
             loop {
                 if found.load(Ordering::SeqCst) {
                     break;
@@ -77,12 +80,18 @@ fn main() {
 
                 let (private_key, address) = create_keypair();
                 let address_str = address.to_string();
+                attempts += 1;
 
                 if target_substrings.iter().any(|substr| address_str.contains(substr)) {
                     thread_tx.send((private_key, address)).unwrap();
                     found.store(true, Ordering::SeqCst);
                     break;
                 }
+
+                if attempts % echo_interval == 0 {
+                    println!("Still nothing found after {} attempts...", attempts);
+                }
+
             }
 
             finished_threads.fetch_add(1, Ordering::SeqCst);
