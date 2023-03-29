@@ -3,6 +3,8 @@ use rand::{Rng, rngs::OsRng};
 use bitcoin::network::constants::Network;
 use bitcoin::util::key::PrivateKey;
 use bitcoin::Address;
+use std::thread;
+use std::sync::mpsc;
 
 fn create_keypair() -> (PrivateKey, Address) {
     // Generate a random secret key
@@ -31,9 +33,20 @@ fn create_keypair() -> (PrivateKey, Address) {
 }
 
 fn main() {
-    let (private_key, address) = create_keypair();
+    let num_threads = 100;
+    let (tx, rx) = mpsc::channel();
 
-    // Print the generated key pair
-    println!("Private key: {}", private_key.to_wif());
-    println!("Address: {}", address);
+    for _ in 0..num_threads {
+        let thread_tx = tx.clone();
+        thread::spawn(move || {
+            let keypair = create_keypair();
+            thread_tx.send(keypair).unwrap();
+        });
+    }
+
+    for _ in 0..num_threads {
+        let (private_key, address) = rx.recv().unwrap();
+        println!("Private key: {}", private_key.to_wif());
+        println!("Address: {}", address);
+    }
 }
