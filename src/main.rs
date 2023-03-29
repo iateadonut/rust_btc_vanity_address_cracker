@@ -4,24 +4,19 @@ use bitcoin::network::constants::Network;
 use bitcoin::util::key::PrivateKey;
 use bitcoin::Address;
 use std::thread;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, atomic::{AtomicBool, AtomicUsize, Ordering}};
 
 fn create_keypair() -> (PrivateKey, Address) {
-    // Generate a random secret key
     let secp = secp256k1::Secp256k1::new();
     let mut rng = OsRng;
     let secret_key = SecretKey::from_slice(&mut rng.gen::<[u8; 32]>()).expect("Unable to generate secret key");
-
-    // Calculate the public key
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
 
-    // Convert the secp256k1 public key to a bitcoin public key
     let public_key = bitcoin::PublicKey {
         compressed: true,
         key: public_key,
     };
 
-    // Generate the Bitcoin private key and address
     let private_key = PrivateKey {
         compressed: true,
         network: Network::Bitcoin,
@@ -33,20 +28,54 @@ fn create_keypair() -> (PrivateKey, Address) {
 }
 
 fn main() {
-    let num_threads = 100;
-    let (tx, rx) = mpsc::channel();
+    let max_threads = 8;
+    let max_attempts = 10000;
+    let target_substrings = ["brodude", "SwEeT"];
 
-    for _ in 0..num_threads {
+    let (tx, rx) = mpsc::channel();
+    let attempts_per_thread = max_attempts / max_threads;
+    let found = Arc::new(AtomicBool::new(false));
+    let finished_threads = Arc::new(AtomicUsize::new(0));
+
+    for _ in 0..max_threads {
         let thread_tx = tx.clone();
+        let target_substrings = target_substrings.clone();
+        let found = found.clone();
+        let finished_threads = finished_threads.clone();
+
         thread::spawn(move || {
-            let keypair = create_keypair();
-            thread_tx.send(keypair).unwrap();
+            for _ in 0..attempts_per_thread {
+                if found.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let (private_key, address) = create_keypair();
+                let address_str = address.to_string();
+
+                if target_substrings.iter().any(|substr| address_str.contains(substr)) {
+                    thread_tx.send((private_key, address)).unwrap();
+                    found.store(true, Ordering::SeqCst);
+                    break;
+                }
+            }
+
+            finished_threads.fetch_add(1, Ordering::SeqCst);
         });
     }
 
-    for _ in 0..num_threads {
-        let (private_key, address) = rx.recv().unwrap();
-        println!("Private key: {}", private_key.to_wif());
-        println!("Address: {}", address);
+    loop {
+        if finished_threads.load(Ordering::SeqCst) >= max_threads {
+            break;
+        }
+    }
+
+    match rx.try_recv() {
+        Ok((private_key, address)) => {
+            println!("Found private key: {}", private_key.to_wif());
+            println!("Found address: {}", address);
+        }
+        Err(_) => {
+            println!("No matching address found within {} attempts.", max_attempts);
+        }
     }
 }
