@@ -5,6 +5,10 @@ use bitcoin::util::key::PrivateKey;
 use bitcoin::Address;
 use std::thread;
 use std::sync::{mpsc, Arc, atomic::{AtomicBool, AtomicUsize, Ordering}};
+use std::fs::{File, OpenOptions};
+use std::io::prelude::*;
+use std::io::{self, BufRead};
+use std::path::Path;
 
 fn create_keypair() -> (PrivateKey, Address) {
     let secp = secp256k1::Secp256k1::new();
@@ -27,13 +31,35 @@ fn create_keypair() -> (PrivateKey, Address) {
     (private_key, address)
 }
 
+fn read_target_substrings(file_path: &str) -> Result<Vec<String>, io::Error> {
+    let path = Path::new(file_path);
+    let file = File::open(&path)?;
+    let reader = io::BufReader::new(file);
+
+    let mut substrings = Vec::new();
+    for line in reader.lines() {
+        substrings.push(line?);
+    }
+
+    Ok(substrings)
+}
+
 fn main() {
-    let max_threads = 8;
-    let max_attempts = 10000;
-    let target_substrings = ["brodude", "SwEeT"];
+    let max_threads = 2;
+    let output_file = "keypairs.txt";
+
+    // let target_substrings = ["brodude", "SwEeT", "BU"];
+
+    let target_substrings_file = "target_substrings.txt";
+    let target_substrings = match read_target_substrings(target_substrings_file) {
+        Ok(substrings) => substrings,
+        Err(err) => {
+            eprintln!("Error reading target substrings file: {}", err);
+            return;
+        }
+    };
 
     let (tx, rx) = mpsc::channel();
-    let attempts_per_thread = max_attempts / max_threads;
     let found = Arc::new(AtomicBool::new(false));
     let finished_threads = Arc::new(AtomicUsize::new(0));
 
@@ -44,7 +70,7 @@ fn main() {
         let finished_threads = finished_threads.clone();
 
         thread::spawn(move || {
-            for _ in 0..attempts_per_thread {
+            loop {
                 if found.load(Ordering::SeqCst) {
                     break;
                 }
@@ -73,9 +99,19 @@ fn main() {
         Ok((private_key, address)) => {
             println!("Found private key: {}", private_key.to_wif());
             println!("Found address: {}", address);
+
+            let mut file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(output_file)
+                .expect("Unable to open output file");
+
+            writeln!(file, "Private key: {}", private_key.to_wif()).expect("Unable to write private key to file");
+            writeln!(file, "Address: {}\n", address).expect("Unable to write address to file");
         }
         Err(_) => {
-            println!("No matching address found within {} attempts.", max_attempts);
+            println!("No matching address found.");
         }
     }
 }
