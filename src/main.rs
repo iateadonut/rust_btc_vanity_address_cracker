@@ -82,6 +82,8 @@ fn main() {
     for _ in 0..PRACTICE_RUNS {
         let start_time = Instant::now();
         let (_private_key, _address) = create_keypair();
+        //@todo - include matching attempt:
+        //let _ = check_for_matching_substrings(&address, &target_substrings);
         durations.push(start_time.elapsed().as_micros());
     }
 
